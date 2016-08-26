@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta content="text/html; charset=windows-1252" http-equiv="content-type">
+    <title>GDP Discovery Service RPC Interface Description</title>
+    <style type="text/css">
+table td {  
+  vertical-align: top;
+}
+
+</style></head>
+  <body>
+    <h1>GDP Discovery RPC Interface</h1>
+    <p><i>by Jordan Tipton, 06/05/2016</i></p>
+    <p>Using this scheme for client discovery, clients communicate their presence with 
+    the GDP discovery service using the protocol described below.</p>
+    <h2>General RPC interface for GDP services</h2>
+    <p>The discovery service uses a more general RPC interface which can be used 
+    with a number of different GDP services. RPC messages take the following form:</p>
+    <table style="width: 100%;" valign="top" border="1">
+      <tbody>
+        <tr>
+          <td><b>Length (bytes)</b></td>
+          <td><b>Name</b></td>
+          <td><b>Description/Value</b></td>
+        </tr>
+        <tr>
+          <td>1</td>
+          <td>Name length</td>
+          <td>The number of bytes the name of this RPC message contains (can be 0)</td>
+        </tr>
+        <tr>
+          <td>1</td>
+          <td>RPC type</td>
+          <td>The type of RPC message this is (e.g. RPC-CALL or NAK-C-RPC)</td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td>Payload length</td>
+          <td>The length of the payload</td>
+        </tr>
+        <tr>
+          <td>Variable</td>
+          <td>Payload</td>
+          <td>RPC message payload, which must begin with the name of the RPC message</td>
+        </tr>
+    </table>
+    <p>
+    The first bit encodes whether or not the device wishes to authenticate itself: <br>
+    0x8X - used if the device whishes to authenticate itself <br>
+    0x0X - used if the device does not wish to authenticate itself <br>
+    The remaining bits encode four types of RPC messages: <br>
+    RPC-CALL (type 0xX0) - used to cause remote procedure invocation <br>
+    ACK-RPC (type 0xX1) - indicates positive acknowledgement <br>
+    NAK-C-RPC (type 0xX2) - negative acknowledgement (client error) <br>
+    NAK-S-RPC (type 0xX3) - negative acknowledgement (server error) <br></p>
+    <p> Note: "X" indicates that a nibble is not relevant for the given case listed above <br></p>
+    <h2>Discovery service RPC payloads</h2>
+    <p>The payload of the RPC request will contain one of the following requests:</p>
+    <h4>Connection</h4>
+    <p>Request to connect this client with the discovery service</p>
+    <table style="width: 100%;" valign="top" border="1">
+      <tbody>
+        <tr>
+          <td><b>Length (bytes)</b></td>
+          <td><b>Name</b></td>
+          <td><b>Description/Value</b></td>
+        </tr>
+        <tr>
+          <td>8</td>
+          <td>RPC request name</td>
+          <td>"discconn"</td>
+        </tr>
+        <tr>
+          <td>1</td>
+          <td>Connection type</td>
+          <td>0x8X if authenticated, 0xX0 if input only, 0xX1 if output only, 0xX2 if both</td>
+        </tr>
+        <tr>
+          <td>32</td>
+          <td>Device GUID</td>
+          <td>GUID uniquely identifying this device in the GDP</td>
+        </tr>
+        <tr>
+          <td>32</td>
+          <td>Device information log</td>
+          <td>Name of log which describes device's capabilities</td>
+        </tr>
+        <tr>
+          <td>32</td>
+          <td>Input log name</td>
+          <td>Name of log which device reads from. This entry is omitted if the device
+          is not a type 0x00 or 0x02</td>
+        </tr>
+        <tr>
+          <td>32</td>
+          <td>Output log name</td>
+          <td>Name of log which device writes to. This entry is omitted if the device
+          is not a type 0x01 or 0x02</td>
+        </tr>
+        <tr>
+          <td>Variable</td>
+          <td>Optional Public Key</td>
+          <td>Public key for this device in PEM format</td>
+        </tr>
+      </tbody>
+    </table>
+    <h4>Renew connection</h4>
+    <p>Request to renew this client's connection so it does not time out</p>
+    <table style="width: 100%;" valign="top" border="1">
+      <tbody>
+        <tr>
+          <td><b>Length (bytes)</b></td>
+          <td><b>Name</b></td>
+          <td><b>Description/Value</b></td>
+        </tr>
+        <tr>
+          <td>9</td>
+          <td>RPC request name</td>
+          <td>"discrenew"</td>
+        </tr>
+        <tr>
+          <td>32</td>
+          <td>Device GUID</td>
+          <td>GUID uniquely identifying this device in the GDP</td>
+        </tr>
+      </tbody>
+    </table>
+    <h4>Delete registration</h4>
+    <p>Request to delete this client's registration with the discovery service</p>
+    <table style="width: 100%;" valign="top" border="1">
+      <tbody>
+        <tr>
+          <td><b>Length (bytes)</b></td>
+          <td><b>Name</b></td>
+          <td><b>Description/Value</b></td>
+        </tr>
+        <tr>
+          <td>10</td>
+          <td>RPC request name</td>
+          <td>"discdelete"</td>
+        </tr>
+        <tr>
+          <td>32</td>
+          <td>Device GUID</td>
+          <td>GUID uniquely identifying this device in the GDP</td>
+        </tr>
+      </tbody>
+    </table>
+    <h2>Discovery service RPC responses</h2>
+    <p>There are 3 RPC responses which are sent from the discovery service. They are RPC messages with the following types: <br>
+    0x01 - ACK-RPC: Indicates positive acknowledgement. These correspond roughly to 2xx codes in HTTP. <br>
+    0x02 - NAK-C-RPC: Negative acknowledgement (client error). These correspond roughly to 4xx codes
+    in HTTP. <br>
+    0x03 - NAK-S-RPC: Negative acknowledgement (server error). These correspond roughly to 5xx codes in HTTP. <br></p>
+    <p>ACKs may contain a payload in special cases described below.</p>
+    <h4>Authentication challenge</h4>
+    <p>A challenge from a discovery server containing a nonce to be signed and returned
+       by the client</p>
+    <table style="width: 100%;" valign="top" border="1">
+      <tbody>
+        <tr>
+          <td><b>Length (bytes)</b></td>
+          <td><b>Name</b></td>
+          <td><b>Description/Value</b></td>
+        </tr>
+        <tr>
+          <td>9</td>
+          <td>RPC request name</td>
+          <td>"challenge"</td>
+        </tr>
+        <tr>
+          <td>8</td>
+          <td>Challenge nonce</td>
+          <td>8-byte nonce to be included in signed challenge response from client</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>After receiving the challenge, clients should respond with a signature over the
+       concatenation of the nonce + their guid. Finally, an ACK (or NAK) from the server
+       should be received.</p>
+  </body>
+</html>

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta content="text/html; charset=windows-1252" http-equiv="content-type">
+    <title>GDP Discovery Info Log format Description</title>
+    <style type="text/css">
+table td {  
+  vertical-align: top;
+}
+
+</style></head>
+  <body>
+    <h1>GDP Info Log Format</h1>
+    <p><i>by Jordan Tipton, 06/05/2016</i></p>
+    <p>The following table describes the format of the information log used by the gdp discovery
+    service to read clients' information and store it within the discovery database. Information
+    logs should be a gdp logs.</p>
+    <table style="width: 100%;" valign="top" border="1">
+      <tbody>
+        <tr>
+          <td><b>Record no.</b></td>
+          <td><b>Name</b></td>
+          <td><b>Description/Value</b></td>
+        </tr>
+        <tr>
+          <td>1</td>
+          <td>num_capabilities</td>
+          <td>The number of capabilities contained within the info log</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>num_permissions</td>
+          <td>The number of permissions contained within the info log</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>num_pkeys</td>
+          <td>The number of public keys corresponding with clients this info log describes</td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td>first capability</td>
+          <td>string describing a capability</td>
+        </tr>
+        <tr>
+          <td>...</td>
+          <td>capability 2 - n</td>
+          <td>one of n records describing capabilities</td>
+        </tr>
+        <tr>
+          <td>variable</td>
+          <td>first permission</td>
+          <td>string describing a permission</td>
+        </tr>
+        <tr>
+          <td>...</td>
+          <td>permission 2 - n</td>
+          <td>one of n records describing permissions</td>
+        </tr>
+        <tr>
+          <td>variable</td>
+          <td>first public key</td>
+          <td>public key of a client this info log describes in pem format</td>
+        </tr>
+        <tr>
+          <td>...</td>
+          <td>public key 2 - n</td>
+          <td> one of n public keys corresponding with clients</td>
+        </tr>
+        <tr>
+          <td>variable</td>
+          <td>certificate</td>
+          <td>optional certificate verifying the origin of this information log</td>
+        </tr>
+    </table>
+  </body>
+</html>
