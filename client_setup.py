@@ -37,7 +37,7 @@ PERMISSIONS:
 """
 
 import sys
-sys.path.append("../") # So that we can actually load the python_api module
+sys.path.append("../../") # So that we can actually load the python_api module
 import gdp
 import hashlib
 from OpenSSL import crypto

@@ -21,7 +21,7 @@ Public interface:
 """
 
 import sys
-sys.path.append("../")
+sys.path.append("../../")
 import gdp
 import time
 import argparse

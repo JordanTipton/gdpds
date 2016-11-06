@@ -17,7 +17,7 @@ authenticated.
 Python API example:
 > discovery.server.run(router_host='129.168.4.2', router_port=8007, user="gdp_discovery",
                        passwd="gdp_disc438", host="localhost", name="discovery_db",
-                       trusted_certificates=certs)
+                       bootstrap="bootstrap.ring.cx:4222", trusted_certificates=certs)
 
 Python API example using defaults and no trusted certificates:
 > discovery.server.run()
@@ -55,8 +55,8 @@ Internal structure and key properties:
 
 import sys
 sys.path.append("../") # so we can use the python gdp api
-import os
 import gdp
+import os
 import argparse
 import socket
 import dbus
@@ -74,8 +74,15 @@ from optparse import OptionParser
 import shutil
 import random
 from OpenSSL import crypto
+import subprocess
+import datetime
+from urllib2 import urlopen
+import requests
+import json
 
 DEBUG = False # Prints database tables at TIMEOUT_FREQ if True
+
+public_ip = urlopen("http://ip.42.pl/raw").read()
 
 # Zeroconf constants
 SERVICE_HOST = "" # Host to publish records for, default to localhost
@@ -88,6 +95,9 @@ TIMEOUT = 30 # Number of seconds a device will remain logged in the database wit
 TIMEOUT_FREQ = 5 # Number of seconds before each round of device removal
 SIGNATURE_LEN = 128 # Size of signature from client
 PKEY_LEN = 271 # Size of public key .pem file
+
+# DHT Service constants
+DHT_PORT = 5000
 
 # Shared dictionary mapping connected clients to their last transmission time
 guid_times = {}
@@ -384,6 +394,42 @@ class ClientLogger:
             print(e)
             return False
 
+    def dht_put(self, device_guid, info_log, input_log, output_log):
+        time = str(datetime.datetime.now())
+        #time = datetime.datetime.now()
+        #time = str(time.year) + "-" + str(time.month) + "-" + str(time.day) + "T" + \
+        #       str(time.hour) + ":" + str(time.minute) + ":" + str(time.second)
+        data = {"guid": device_guid, "datetime": time, "logger_ip": public_ip, \
+                "input_log": input_log, "output_log": output_log}
+        r = requests.put("http://localhost:" + str(DHT_PORT) + "/devices/" + info_log, data=data)
+        if r.status_code == 200:
+            return [{str(k): str(v) for k, v in json.loads(str(e)).items()} for e in r.json()]
+        else:
+            return False
+
+    def dht_get(self, info_log):
+        r = requests.get("http://localhost:" + str(DHT_PORT) + "/devices/" + info_log)
+        if r.status_code == 200:
+            return [{str(k): str(v) for k, v in json.loads(str(e)).items()} for e in r.json()]
+        else:
+            return False
+
+class DhtNode(threading.Thread):
+    """
+    Manages server's connection to a discovery DHT network
+    """
+    def __init__(self, bootstrap, input_bootstrap_port=4224):
+        threading.Thread.__init__(self)
+        self.bootstrap = bootstrap # example: "bootstrap.ring.cx:4222"
+        self.input_bootstrap_port = input_bootstrap_port
+        
+    def run(self):
+        # Must make a system call to run dht_service because it requires python3
+        if self.bootstrap != None:
+            subprocess.call(["python3", "discovery/dht_service.py", "-b", self.bootstrap, \
+                    "-p", str(self.input_bootstrap_port)])
+        else:
+            subprocess.call(["python3", "discovery/dht_service.py", "-p", str(self.input_bootstrap_port)])
 
 class ConnectionLogger(threading.Thread, ClientLogger):
     """
@@ -574,6 +620,7 @@ class ConnectionLogger(threading.Thread, ClientLogger):
 
         # delete old capabilities and permissions
         self.remove_client(device_GUID, remove_info=False)
+        self.dht_put(device_GUID, device_info_log, device_input_log, device_output_log)
         try:
             cursor = self.db.cursor()
             #insert client info into clients table, replacing old data with new
@@ -638,7 +685,18 @@ class ConnectionLogger(threading.Thread, ClientLogger):
         print "Received a renew request from " + str(self.addr)
         device_GUID, = unpack('!32s', data[0 : 32])
         self.guid = device_GUID
+        try:
+            cursor = self.db.cursor()
+            sql = """SELECT info_log FROM clients WHERE client_guid = '%s';""" % device_GUID
+            cursor.execute(sql)
+            info_log, = cursor.fetchone()
+            print "info_log = " + str(info_log)
+            cursor.close()
+        except MySQLdb.Error, e:
+            print "Error %d: %s" % (e.args[0], e.args[1])
+            sys.exit(1)
         if not self.is_authenticated(self.guid) or self.verify_client():
+            self.dht_put(info_log, device_GUID)
             guid_times_lock.acquire()
             guid_times[device_GUID] = time.time()
             guid_times_lock.release()
@@ -811,13 +869,12 @@ def setup_database(db_user, db_passwd, db_host, db_name):
         cursor.close()
         db.close()
     except MySQLdb.Error, e:
-        db.rollback()
         print "Error %d: %s" % (e.args[0], e.args[1])
         sys.exit(1)
 
 def run(router_host=None, router_port=None, user="gdp_discovery",
         passwd="gdp_disc438", host="localhost", name="discovery_db",
-        trusted_certificates=None):
+        bootstrap=None, trusted_certificates=None):
     """
     Runs the gdp discovery server. Starts three threads:
     1. One thread runs the zeroconf zerfice, which advertises the presence
@@ -834,6 +891,7 @@ def run(router_host=None, router_port=None, user="gdp_discovery",
     passwd - password for discovery database
     host - host of the discovery database
     name - name of the discovery database
+    bootstrap - "ip:port" of a dht_service bootstrap node
     trusted_certificates - list of trusted certificates in string format,
                            which will be used to verify info_log
                            certificates
@@ -848,7 +906,9 @@ def run(router_host=None, router_port=None, user="gdp_discovery",
     zc_child = os.fork()
     if zc_child:
         timeout_logger = TimeoutLogger(user, passwd, host, name)
-        timeout_logger.start() 
+        timeout_logger.start()
+        dht_node = DhtNode(bootstrap)
+        dht_node.start()
         listen(router_host, router_port, user, passwd, host, name)
         waitpid(zc_child, 0)
     else:
@@ -871,6 +931,8 @@ def main():
                       help="specify discovery database host")
     parser.add_option("-n", "--name", dest="name", default="discovery_db",
                       help="specify discovery database name")
+    parser.add_option("-b", "--bootstrap", dest="bootstrap",
+                      help="ip:port of a dht_service bootstrap node")
     parser.add_option("-c", "--certificates_file", dest="certs_file",
                       help="specify a file containing trusted certificates")
     (options, args) = parser.parse_args()
@@ -896,7 +958,7 @@ def main():
                     cert += line
 
     run(router_host, router_port, options.user, options.passwd, options.host, 
-        options.name, trusted_certs)
+        options.name, options.bootstrap, trusted_certs)
     
 if __name__ == '__main__':
     main()
