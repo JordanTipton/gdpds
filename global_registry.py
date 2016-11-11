@@ -28,6 +28,8 @@ class Device(Resource):
         capabilities = request.args.getlist("capability")
         permissions = request.args.getlist("permission")
         active_since = request.args.get("active_since")
+        print "Device -get: capabilities = %s, permissions = %s, active_since = %s" % \
+                (str(capabilities), str(permissions), str(active_since))
         return device_repository.get_devices(capabilities, permissions, active_since)
 
 class DeviceClass(Resource):
@@ -222,6 +224,7 @@ class DeviceRepository:
         device dicts which have an active_since value earlier than threshold
         """
         def str_to_datetime(string_val):
+            print "string_val = " + str(string_val)
             return datetime.datetime.strptime(string_val, "%Y-%m-%d %H:%M:%S.%f")
 
         if type(thresh) != datetime.datetime:
@@ -234,7 +237,7 @@ class DeviceRepository:
             if thresh > device_time:
                 continue
             if guid in current:
-                current_time = str_to_datetime(current[guid])
+                current_time = str_to_datetime(current[guid]["datetime"])
                 if current_time > device_time:
                     continue
             current[guid] = device
