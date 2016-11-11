@@ -37,7 +37,9 @@ PERMISSIONS:
 """
 
 import sys
-sys.path.append("../../") # So that we can actually load the python_api module
+# append parent directories to path so can import gdp from gdpds or its parent
+sys.path.append("../")
+sys.path.append("../../")
 import gdp
 import hashlib
 from OpenSSL import crypto

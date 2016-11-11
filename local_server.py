@@ -32,11 +32,11 @@ Public interface:
   GDP router information, and verifies info_log certificates using the provided list
   of certificates.
 * Main:
-  Command line wrapper for run() using the interfaced described in main().
+  Command line wrapper for run() using the interface described in main().
 
 Internal structure and key properties:
 * Database:
-  The discovery database is designed to be ephemeral in nature. It is maintianed in
+  The discovery database is designed to be ephemeral in nature. It is maintained in
   real time and previously stored state is discarded upon discovery server startup.
   
   The discovery service logs client information using 3 tables:
@@ -54,7 +54,9 @@ Internal structure and key properties:
 """
 
 import sys
-sys.path.append("../") # so we can use the python gdp api
+# append parent directories to path so can import gdp from gdpds or its parent
+sys.path.append("../")
+sys.path.append("../../")
 import gdp
 import os
 import argparse
@@ -79,6 +81,7 @@ import datetime
 from urllib2 import urlopen
 import requests
 import json
+import info_log_reader
 
 DEBUG = False # Prints database tables at TIMEOUT_FREQ if True
 
@@ -86,22 +89,25 @@ public_ip = urlopen("http://ip.42.pl/raw").read()
 
 # Zeroconf constants
 SERVICE_HOST = "" # Host to publish records for, default to localhost
-SERVICE_PORT = 8006
+SERVICE_PORT = 7990
 
 # ClientLogger server constants
 HOST = ''
-PORT = 8006
+PORT = 7990
 TIMEOUT = 30 # Number of seconds a device will remain logged in the database without a transmission
 TIMEOUT_FREQ = 5 # Number of seconds before each round of device removal
 SIGNATURE_LEN = 128 # Size of signature from client
 PKEY_LEN = 271 # Size of public key .pem file
 
 # DHT Service constants
-DHT_PORT = 5000
+DHT_PORT = 7991
 
 # Shared dictionary mapping connected clients to their last transmission time
 guid_times = {}
 guid_times_lock = threading.Lock()
+
+# Reads info logs
+log_reader = None
 
 # A store containing trusted certificates
 trusted_cert_store = None
@@ -247,51 +253,6 @@ class ClientLogger:
         """
         if os.path.exists("keys"):
             shutil.rmtree("keys")
-    
-    def read_info_log(self, name_str):
-        """
-        Reads a info_log and returns the capabilities, permissions, public key(s)
-        (if present) and certificate (if present) described in the info_log
-
-        Parameters:
-        name_str - name of the info_log from which to read
-        """
-        gcl_name = gdp.GDP_NAME(name_str)
-        gcl_handle = gdp.GDP_GCL(gcl_name, gdp.GDP_MODE_RO)
-
-        recno = 1
-        capabilities = []
-        permissions = []
-        pkeys = []
-        certificate = None
-        try:
-            datum = gcl_handle.read(recno)
-            num_capabilities = int(datum['data'])
-            recno += 1
-            datum = gcl_handle.read(recno)
-            num_permissions = int(datum['data'])
-            recno += 1
-            datum = gcl_handle.read(recno)
-            num_pkeys = int(datum['data'])
-            recno += 1
-            while recno <= 3 + num_capabilities:
-                datum = gcl_handle.read(recno)
-                capabilities.append(datum['data'])
-                recno += 1
-            while recno <= 3 + num_capabilities + num_permissions:
-                datum = gcl_handle.read(recno)
-                permissions.append(datum['data'])
-                recno += 1
-            while recno <= 3 + num_capabilities + num_permissions + num_pkeys:
-                datum = gcl_handle.read(recno)
-                pkeys.append(datum['data'])
-                recno += 1  
-            datum = gcl_handle.read(recno)
-            certificate = datum['data']
-        except:
-            pass # Error could be because there is no certificate
-
-        return capabilities, permissions, pkeys, certificate
 
     def remove_client(self, device_GUID, remove_capabilities=True, \
                       remove_permissions=True, remove_info=True):
@@ -395,20 +356,28 @@ class ClientLogger:
             return False
 
     def dht_put(self, device_guid, info_log, input_log, output_log):
+        print "dht_put: device_guid = %s, info_log = %s, input_log = %s, output_log = %s" % \
+                (device_guid, info_log, input_log, output_log)
         time = str(datetime.datetime.now())
         #time = datetime.datetime.now()
         #time = str(time.year) + "-" + str(time.month) + "-" + str(time.day) + "T" + \
         #       str(time.hour) + ":" + str(time.minute) + ":" + str(time.second)
         data = {"guid": device_guid, "datetime": time, "logger_ip": public_ip, \
                 "input_log": input_log, "output_log": output_log}
-        r = requests.put("http://localhost:" + str(DHT_PORT) + "/devices/" + info_log, data=data)
+        print "dht_put: about to put to DHT"
+        #r = requests.put("http://127.0.0.1:" + str(DHT_PORT) + "/rest/v1/devices/" + info_log, data=data)
+        r = requests.put("http://localhost:" + str(DHT_PORT) + "/rest/v1/devices/" + info_log, data=data)
+        print "dht_put: completed put to DHT"
         if r.status_code == 200:
-            return [{str(k): str(v) for k, v in json.loads(str(e)).items()} for e in r.json()]
+            result = [{str(k): str(v) for k, v in json.loads(str(e)).items()} for e in r.json()]
+            print "dht_put: returning " + str(result)
+            return  result
         else:
+            print "failed to log device with DHT"
             return False
 
     def dht_get(self, info_log):
-        r = requests.get("http://localhost:" + str(DHT_PORT) + "/devices/" + info_log)
+        r = requests.get("http://localhost:" + str(DHT_PORT) + "/rest/v1/devices/" + info_log)
         if r.status_code == 200:
             return [{str(k): str(v) for k, v in json.loads(str(e)).items()} for e in r.json()]
         else:
@@ -426,10 +395,11 @@ class DhtNode(threading.Thread):
     def run(self):
         # Must make a system call to run dht_service because it requires python3
         if self.bootstrap != None:
-            subprocess.call(["python3", "discovery/dht_service.py", "-b", self.bootstrap, \
-                    "-p", str(self.input_bootstrap_port)])
+            subprocess.call(["python3", "gdpds/dht_service.py", "-b", self.bootstrap, \
+                    "-p", str(self.input_bootstrap_port), "-P", str(DHT_PORT)])
         else:
-            subprocess.call(["python3", "discovery/dht_service.py", "-p", str(self.input_bootstrap_port)])
+            subprocess.call(["python3", "gdpds/dht_service.py", "-p", str(self.input_bootstrap_port),
+            		"-P", str(DHT_PORT)])
 
 class ConnectionLogger(threading.Thread, ClientLogger):
     """
@@ -591,7 +561,7 @@ class ConnectionLogger(threading.Thread, ClientLogger):
                 device_pkey, = unpack('!' + str(PKEY_LEN) + 's', data[162 :])
 
         authenticated = True if device_pkey else False
-        capabilities, permissions, pkeys, certificate = self.read_info_log(device_info_log)
+        capabilities, permissions, pkeys, certificate = log_reader.read(device_info_log)
 
         if self.verify_certificate_chain(certificate):
             certified = True
@@ -687,16 +657,32 @@ class ConnectionLogger(threading.Thread, ClientLogger):
         self.guid = device_GUID
         try:
             cursor = self.db.cursor()
-            sql = """SELECT info_log FROM clients WHERE client_guid = '%s';""" % device_GUID
+            sql = """SELECT C.info_log 
+                     FROM clients AS C 
+                     WHERE C.client_guid = '%s';""" % device_GUID
             cursor.execute(sql)
             info_log, = cursor.fetchone()
             print "info_log = " + str(info_log)
+
+            sql = """SELECT C.input_log
+                     FROM clients AS C 
+                     WHERE C.client_guid = '%s';""" % device_GUID
+            cursor.execute(sql)
+            input_log, = cursor.fetchone()
+            print "input_log = " + str(input_log)
+
+            sql = """SELECT C.output_log 
+                     FROM clients AS C
+                     WHERE C.client_guid = '%s';""" % device_GUID
+            cursor.execute(sql)
+            output_log, = cursor.fetchone()
+            print "output_log = " + str(output_log)
             cursor.close()
         except MySQLdb.Error, e:
             print "Error %d: %s" % (e.args[0], e.args[1])
             sys.exit(1)
         if not self.is_authenticated(self.guid) or self.verify_client():
-            self.dht_put(info_log, device_GUID)
+            self.dht_put(device_GUID, info_log, input_log, output_log)
             guid_times_lock.acquire()
             guid_times[device_GUID] = time.time()
             guid_times_lock.release()
@@ -811,10 +797,8 @@ def listen(router_host, router_port, db_user, db_passwd, db_host, db_name):
     Listens for new connections to the discovery server. Creates a ConnectionLogger
     instance for each received connection and handles the RPC request in a new thread.
     """
-    if router_host:
-        gdp.gdp_init(router_host, router_port)
-    else:
-        gdp.gdp_init()
+    global log_reader
+    log_reader = info_log_reader.InfoLogReader(router_host, router_port)
             
     #Listen for new RPC requests
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

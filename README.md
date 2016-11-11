@@ -6,7 +6,7 @@ Please see "gdpds_overview.pdf" for a more detailed description of GDPDS.
 
 # GDPDS Installation Instructions
 
-## Clone GDPDS repo and create lib directory
+### Clone GDPDS repo and create lib directory
 
 ```
 cd gdp/lang/python/apps
@@ -57,6 +57,31 @@ sudo apt-get install python-mysqldb
 sudo apt-get install python-crypto
 sudo apt-get install libssl-dev
 sudo pip install requests
+sudo pip install flask
+sudo pip install flask_restful
 sudo python3 -m pip install flask
 sudo python3 -m pip install flask_restful
+```
+
+# API Overview
+
+### Setup a client's logs
+#### This step is done once to register a client with GDPDS's global registry
+
+Create a registry configuration file of the following form:
+```
+CAPABILITIES:
+<capability 1>
+<capability 2>
+...
+<capability n>
+PERMISSIONS:
+<permission 1>
+<permission 2>
+...
+<permission n>
+```
+
+```
+python gdpds/client_setup.py
 ```

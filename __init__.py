@@ -48,6 +48,6 @@ steps marked with an *):
 
 """
 
-import server, client, client_setup, query
+import local_server, client, client_setup, local_query, global_registry, info_log_reader
 
-__all__ = [server, client, client_setup, query]
+__all__ = [local_server, client, client_setup, local_query, global_registry, info_log_reader]

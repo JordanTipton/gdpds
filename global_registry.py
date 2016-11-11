@@ -1,40 +1,54 @@
 #!/usr/bin/env python
-
-import opendht as dht
+import sys
+# append parent directories to path so can import gdp from gdpds or its parent
+sys.path.append("../")
+sys.path.append("../../")
+import gdp
 import argparse
 import json
-import gdp
 import MySQLdb
 from optparse import OptionParser
 from flask import Flask, request
 from flask_restful import Resource, Api
 import info_log_reader
 import datetime
+import threading
+import subprocess
+import requests
 
-DEFAULT_OPENDHT_PORT = 4226
-node = dht.DhtRunner()
 app = Flask(__name__)
 api = Api(app)
 log_reader = None
 class_repository = None
+device_repository = None
+DHT_PORT = 7992
 
 class Device(Resource):
-	def get(self):
-		capabilities = request.args.getlist("capability")
-		permissions = request.args.getlist("permissions")
+    def get(self):
+        capabilities = request.args.getlist("capability")
+        permissions = request.args.getlist("permission")
         active_since = request.args.get("active_since")
-		return DeviceRepository.get(capabilities, permissions, active_since)
+        return device_repository.get_devices(capabilities, permissions, active_since)
 
 class DeviceClass(Resource):
-	def put(self):
-		form_data = json.loads(json.dumps(request.form))
-		info_log = form_data["info_log"]
-		capabilities, permissions = log_reader.read(info_log)[:2]
-		class_repository.store_new(guid, info_log, capabilities, permissions)
-		return class_repository.get(capabilities, permissions)
+    def put(self):
+        #TODO make idempotent
+        print "DeviceClass: put 1"
+        form_data = json.loads(json.dumps(request.form))
+        print "DeviceClass: put 2"
+        info_log = form_data["info_log"]
+        print "DeviceClass: put 3"
+        capabilities, permissions = log_reader.read(info_log)[:2]
+        print "DeviceClass: put 4"
+        class_repository.store_new(info_log, capabilities, permissions)
+        print "DeviceClass: put 5"
+        result = class_repository.get(capabilities, permissions)
+        print "DeviceClass: put 6"
+        print "result = " + str(result)
+        return result
 
-api.add_resource(Device, "/devices")
-api.add_resource(DeviceClass, "/deviceclasses")
+api.add_resource(Device, "/rest/v1/devices")
+api.add_resource(DeviceClass, "/rest/v1/deviceclasses")
 
 class DeviceClassRepository:
     def __init__(self, db_user, db_passwd, db_host, db_name):
@@ -65,16 +79,28 @@ class DeviceClassRepository:
                      info_log CHAR(43),
                      KEY (permission, info_log))"""
             cursor.execute(sql)
-            db.commit()
+            print "DeviceClassRepo init: executed sql"
+            #db.commit()
+            #print "DeviceClassRepo init: committed"
         except MySQLdb.Error, e:
             print "Error %d: %s" % (e.args[0], e.args[1])
             #sys.exit(1)
 
     def store_new(self, info_log, capabilities, permissions):
+        print "store_new: " + info_log
         try:
             cursor = self.db.cursor()
-            
-            #insert client info into capabilities table
+            #delete old capabilities info
+            sql = """DELETE FROM `capabilities`
+                     WHERE `info_log` = '%s';""" % info_log
+            cursor.execute(sql)
+
+            #delete old permissions info
+            sql = """DELETE FROM `permissions`
+                     WHERE `info_log` = '%s';""" % info_log
+            cursor.execute(sql)
+
+            #insert info into capabilities table
             sql = """INSERT INTO `capabilities`
                      (`capability`, `info_log`)
                      VALUES """
@@ -83,7 +109,7 @@ class DeviceClassRepository:
             sql = sql[:-2] + ";"
             cursor.execute(sql)
 
-            #insert client info into permissions table
+            #insert info into permissions table
             sql = """INSERT INTO `permissions`
                      (`permission`, `info_log`)
                      VALUES """
@@ -105,6 +131,7 @@ class DeviceClassRepository:
         Return set of guids which have each capability in capabilities and
         at least one permission in permissions
         """
+        print "DeviceClassRepository get: capabilities = %s, permissions = %s" % (capabilities, permissions)
         def with_capability(c):
             """
             Return set of guids wich have capability c
@@ -120,12 +147,14 @@ class DeviceClassRepository:
                 classes.add(result[0])
             self.db.commit()
             cursor.close()
+            print "with_capability(%s): %s" % (c, str(classes))
             return classes
 
         def with_permission(p):
             """
             Return set of guids which have capability p
             """
+            print "permission p = " + p
             sql = """SELECT p.info_log
                      FROM permissions p
                      WHERE p.permission = '%s'""" % p
@@ -137,6 +166,7 @@ class DeviceClassRepository:
                 classes.add(result[0])
             self.db.commit()
             cursor.close()
+            print "with_permission(%s): %s" % (p, str(classes))
             return classes
 
         have_capabilities = None
@@ -149,18 +179,27 @@ class DeviceClassRepository:
         if have_capabilities:
             for p in permissions:
                 result |= (have_capabilities & with_permission(p))
-        db.close()
-        return result
+        #db.close()
+        print "DeviceClassRepository get: result = " + str(list(result))
+        return list(result)
 
 class DeviceRepository:
-    @staticmethod
-    def get_devices(capabilities, permissions, active_since):
+    def __init__(self, bootstrap, input_bootstrap_port, opendht_listen_port):
+        dht_node = DhtNode(bootstrap, input_bootstrap_port, opendht_listen_port)
+        dht_node.start()
+
+    def get_devices(self, capabilities, permissions, active_since):
+        print "get_devices: capabilities = " + str(capabilities) + ", permissions = " + \
+                str(permissions) + ", active_since = " + str(active_since)
         if type(active_since) == str:
             active_since = datetime.datetime.strptime(active_since, "%Y-%m-%d %H:%M:%S.%f")
         info_logs = class_repository.get(capabilities, permissions)
+        print "get_devices: info_logs = " + str(info_logs)
         result = []
         for log in info_logs:
-            devices = [v.data.decode("utf-8") for v in node.get(dht.InfoHash.get(info_log))]
+            print "calling dht_get(" + log + ")"
+            devices = self.dht_get(log)
+            print "devices = " + str(devices)
             for device in devices:
                 last_active = datetime.datetime.strptime(device["datetime"], "%Y-%m-%d %H:%M:%S.%f")
                 if last_active < active_since:
@@ -169,17 +208,55 @@ class DeviceRepository:
             result += devices
         return result
 
+    def dht_get(self, info_log):
+        print "dht_get: info_log = " + info_log
+        r = requests.get("http://localhost:" + str(DHT_PORT) + "/rest/v1/devices/" + info_log)
+        if r.status_code == 200:
+            result = [{str(k): str(v) for k, v in json.loads(str(e)).items()} for e in r.json()]
+            print "result = " + str(result)
+            return result
+        else:
+            return False
+
+class DhtNode(threading.Thread):
+    """
+    Manages server's connection to a discovery DHT network
+    """
+    def __init__(self, bootstrap, input_bootstrap_port, opendht_listen_port):
+        threading.Thread.__init__(self)
+        self.bootstrap = bootstrap # example: "bootstrap.ring.cx:4222"
+        self.input_bootstrap_port = input_bootstrap_port
+        self.opendht_listen_port = opendht_listen_port
+        
+    def run(self):
+        # Must make a system call to run dht_service because it requires python3
+        print "type(bootstrap) = " + str(type(self.bootstrap))
+        print "type(input_bootstrap_port) = " + str(type(self.input_bootstrap_port))
+        print "type(opendht_listen_port) = " + str(type(self.opendht_listen_port))
+        print "DhtNode: running with bootstrap = %s, input_bootstrap_port = %s, opendht_listen_port = %s" % \
+                (self.bootstrap, self.input_bootstrap_port, self.opendht_listen_port)
+        if self.bootstrap != None:
+            subprocess.call(["python3", "gdpds/dht_service.py", "-b", self.bootstrap, \
+                    "-p", str(self.input_bootstrap_port), "-P", str(self.opendht_listen_port)])
+        else:
+            subprocess.call(["python3", "gdpds/dht_service.py", "-p", str(self.input_bootstrap_port), 
+                    "-P", str(self.opendht_listen_port)])
+
 def main():
-    global node, log_reader
+    global class_repository, device_repository, log_reader
     b_host = None
     b_port = None
 
     usage = "usage: %prog [options]"
     parser = OptionParser(usage)
-    parser.add_option("-p", "--port", dest="port",
-                      help="specify port for this opendht node to listen on")
     parser.add_option("-b", "--bootstrap", dest="bootstrap",
                       help="specify bootstrap opendht node to connect to in form ip:port")
+    parser.add_option("--input_bootstrap_port", dest="input_bootstrap_port", default="4222",
+                      help="specify port for this opendht to listen as a bootstrap node on")
+    parser.add_option("--opendht_listen_port", dest="opendht_listen_port", default="7992",
+                      help="specify port the opendht service will listen for requests on")
+    parser.add_option("--registry_listen_port", dest="registry_listen_port", default="80",
+                      help="specify port the registry service listens for requests on")
     parser.add_option("-r", "--router", dest="router",
                       help="use gdp router specified in the form ip:port")
     parser.add_option("-u", "--user", dest="user", default="gdp_discovery",
@@ -202,20 +279,9 @@ def main():
 
     class_repository = DeviceClassRepository(options.user, options.passwd, \
             options.host, options.name)
-    if options.port:
-        port = int(options.port)
-    else:
-        port = DEFAULT_OPENDHT_PORT
-
-    if options.bootstrap:
-        b_host, b_port = options.bootstrap.split(":")
-    id = dht.Identity()
-    id.generate()
-    node.run(id, port=port)
-    if b_host:
-        # connect node to existing opendht network using given bootstrap node
-        node.bootstrap(b_host, b_port)
-    app.run(debug=False, use_reloader=False)
+    device_repository = DeviceRepository(options.bootstrap, options.input_bootstrap_port,
+            options.opendht_listen_port)
+    app.run(debug=False, use_reloader=False, port=options.registry_listen_port)
     
 if __name__ == '__main__':
     main()
