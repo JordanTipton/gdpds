@@ -191,19 +191,16 @@ class DeviceRepository:
     def get_devices(self, capabilities, permissions, active_since):
         print "get_devices: capabilities = " + str(capabilities) + ", permissions = " + \
                 str(permissions) + ", active_since = " + str(active_since)
-        if type(active_since) == str:
-            active_since = datetime.datetime.strptime(active_since, "%Y-%m-%d %H:%M:%S.%f")
         info_logs = class_repository.get(capabilities, permissions)
         print "get_devices: info_logs = " + str(info_logs)
         result = []
         for log in info_logs:
             print "calling dht_get(" + log + ")"
-            devices = self.dht_get(log)
+            unfiltered = self.dht_get(log)
+            print "unfiltered = " + str(unfiltered)
+            devices = self.filter_non_current(unfiltered, active_since)
             print "devices = " + str(devices)
             for device in devices:
-                last_active = datetime.datetime.strptime(device["datetime"], "%Y-%m-%d %H:%M:%S.%f")
-                if last_active < active_since:
-                    devices.remove(device)
                 device["info_log"] = log
             result += devices
         return result
@@ -218,6 +215,31 @@ class DeviceRepository:
         else:
             return False
 
+    def filter_non_current(self, device_dicts, thresh):
+        """
+        Creates a list of device dicts which does not have duplicate guids and includes
+        only device dicts with the most current active_since value. Also does not include
+        device dicts which have an active_since value earlier than threshold
+        """
+        def str_to_datetime(string_val):
+            return datetime.datetime.strptime(string_val, "Y-%m-%d %H:%M:%S.%f")
+
+        if type(thresh) == str:
+            thresh = str_to_datetime(thresh)
+        current = {}
+        for device in device_dicts:
+            guid = device["guid"]
+            active_since = device["active_since"]
+            device_time = str_to_datetime(active_since)
+            if thresh > device_time:
+                continue
+            if guid in current:
+                current_time = str_to_datetime(current[guid])
+                if current_time > device_time:
+                    continue
+            current[guid] = device
+        return current
+
 class DhtNode(threading.Thread):
     """
     Manages server's connection to a discovery DHT network
@@ -230,9 +252,6 @@ class DhtNode(threading.Thread):
         
     def run(self):
         # Must make a system call to run dht_service because it requires python3
-        print "type(bootstrap) = " + str(type(self.bootstrap))
-        print "type(input_bootstrap_port) = " + str(type(self.input_bootstrap_port))
-        print "type(opendht_listen_port) = " + str(type(self.opendht_listen_port))
         print "DhtNode: running with bootstrap = %s, input_bootstrap_port = %s, opendht_listen_port = %s" % \
                 (self.bootstrap, self.input_bootstrap_port, self.opendht_listen_port)
         if self.bootstrap != None:

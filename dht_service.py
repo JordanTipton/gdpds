@@ -20,36 +20,8 @@ class Device(Resource):
         guid = request.form["guid"]
         print("dht_service - put: guid = " + guid)
         data = bytes(json.dumps(request.form).replace("\x00", "").replace("\\u0000", ""), "utf-8")
-        print("dht_service - put: 1")
-        values = node.get(dht.InfoHash.get(log_name))
-        print("dht_service - put: 2")
-        value = None
-        for val in values:
-            print("val in values = " + str(val))
-            if eval(val.data.decode("ascii"))["guid"] == guid:
-                print("value = " + str(val))
-                value = val
-                break
-        if value != None:
-            # Update existing value if this guid already exists in the dht
-            print("dht_service - put: updating existing")
-            print("data =" +  str(data))
-            value.data = data
-            print("dht_service - put: 3")
-            print(str(node.get(dht.InfoHash.get(log_name))))#delete
-            print("dht_service - put: 3.5")
-            node.put(dht.InfoHash.get(log_name), dht.Value(b"test1"))
-            print("dht_service - put: 3.7")
-            a = 0
-            for i in range(10000):
-                a += 151325 * 1524361
-            print("asdgasd")
-            node.put(dht.InfoHash.get(log_name), value)
-            print("dht_service - put: 4")
-        else:
-            # Create a new value for this guid if it does not exist in the dht
-            print("dht_service - put: creating new with data = " + str(data))
-            node.put(dht.InfoHash.get(log_name), dht.Value(data))
+        print("dht_service - put: creating new with data = " + str(data))
+        node.put(dht.InfoHash.get(log_name), dht.Value(data))
         print("dht_service - put: 5")
         result = [v.data.decode("utf-8") for v in node.get(dht.InfoHash.get(log_name))]
         print("dht_service - put: result = " + str(result))
@@ -71,6 +43,8 @@ def main():
     parser.add_option("-b", "--bootstrap", dest="bootstrap",
                       help="specify bootstrap opendht node to connect to in form ip:port")
     (options, args) = parser.parse_args()
+    print("dht_service: port=%s, listen_port=%s, bootstrap=%s" % \
+            (options.port, options.opendht_listen_port, options.bootstrap))
 
     if options.bootstrap:
         b_host, b_port = options.bootstrap.split(":")
@@ -79,6 +53,7 @@ def main():
     node.run(id, port=int(options.port))
     if b_host:
         # connect node to existing opendht network using given bootstrap node
+        print("dht_service: b_host = %s, b_port = %s" % (b_host, b_port))
         node.bootstrap(b_host, b_port)
     print("running with port = " + options.opendht_listen_port)
     app.run(debug=False, use_reloader=False, port=int(options.opendht_listen_port))
