@@ -222,14 +222,14 @@ class DeviceRepository:
         device dicts which have an active_since value earlier than threshold
         """
         def str_to_datetime(string_val):
-            return datetime.datetime.strptime(string_val, "Y-%m-%d %H:%M:%S.%f")
+            return datetime.datetime.strptime(string_val, "%Y-%m-%d %H:%M:%S.%f")
 
-        if type(thresh) == str:
+        if type(thresh) != datetime.datetime:
             thresh = str_to_datetime(thresh)
         current = {}
         for device in device_dicts:
             guid = device["guid"]
-            active_since = device["active_since"]
+            active_since = device["datetime"]
             device_time = str_to_datetime(active_since)
             if thresh > device_time:
                 continue
@@ -238,7 +238,7 @@ class DeviceRepository:
                 if current_time > device_time:
                     continue
             current[guid] = device
-        return current
+        return list(current.values())
 
 class DhtNode(threading.Thread):
     """
