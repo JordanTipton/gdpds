@@ -83,7 +83,7 @@ import requests
 import json
 import info_log_reader
 
-DEBUG = False # Prints database tables at TIMEOUT_FREQ if True
+DEBUG = True # Prints database tables at TIMEOUT_FREQ if True
 
 public_ip = urlopen("http://ip.42.pl/raw").read()
 
@@ -94,7 +94,7 @@ SERVICE_PORT = 7990
 # ClientLogger server constants
 HOST = ''
 PORT = 7990
-TIMEOUT = 30 # Number of seconds a device will remain logged in the database without a transmission
+TIMEOUT = 120 # Number of seconds a device will remain logged in the database without a transmission
 TIMEOUT_FREQ = 5 # Number of seconds before each round of device removal
 SIGNATURE_LEN = 128 # Size of signature from client
 PKEY_LEN = 271 # Size of public key .pem file
@@ -356,16 +356,15 @@ class ClientLogger:
             return False
 
     def dht_put(self, device_guid, info_log, input_log, output_log):
-        print "dht_put: device_guid = %s, info_log = %s, input_log = %s, output_log = %s" % \
-                (device_guid, info_log, input_log, output_log)
+        if DEBUG:
+            print "dht_put: device_guid = %s, info_log = %s, input_log = %s, output_log = %s" % \
+                    (device_guid, info_log, input_log, output_log)
         time = str(datetime.datetime.now())
         #time = datetime.datetime.now()
         #time = str(time.year) + "-" + str(time.month) + "-" + str(time.day) + "T" + \
         #       str(time.hour) + ":" + str(time.minute) + ":" + str(time.second)
         data = {"guid": device_guid, "datetime": time, "logger_ip": public_ip, \
                 "input_log": input_log, "output_log": output_log}
-        print "dht_put: about to put to DHT"
-        #r = requests.put("http://127.0.0.1:" + str(DHT_PORT) + "/rest/v1/devices/" + info_log, data=data)
         r = requests.put("http://localhost:" + str(DHT_PORT) + "/rest/v1/devices/" + info_log, data=data)
         print "dht_put: completed put to DHT"
         if r.status_code == 200:

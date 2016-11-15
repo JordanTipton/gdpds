@@ -34,18 +34,11 @@ class Device(Resource):
 
 class DeviceClass(Resource):
     def put(self):
-        #TODO make idempotent
-        print "DeviceClass: put 1"
         form_data = json.loads(json.dumps(request.form))
-        print "DeviceClass: put 2"
         info_log = form_data["info_log"]
-        print "DeviceClass: put 3"
         capabilities, permissions = log_reader.read(info_log)[:2]
-        print "DeviceClass: put 4"
         class_repository.store_new(info_log, capabilities, permissions)
-        print "DeviceClass: put 5"
         result = class_repository.get(capabilities, permissions)
-        print "DeviceClass: put 6"
         print "result = " + str(result)
         return result
 
@@ -185,6 +178,21 @@ class DeviceClassRepository:
         print "DeviceClassRepository get: result = " + str(list(result))
         return list(result)
 
+    def get_c_and_p(self, info_log):
+        sql = """SELECT c.capability
+                 FROM capabilities c
+                 WHERE c.info_log = '%s'""" % info_log
+        cursor = self.db.cursor()
+        cursor.execute(sql)
+        capabilities = [v[0] for v in cursor.fetchall()]
+        sql = """SELECT p.permission
+                 FROM permissions p
+                 WHERE p.info_log = '%s'""" % info_log
+        cursor.execute(sql)
+        permissions = [v[0] for v in cursor.fetchall()]
+        cursor.close()
+        return capabilities, permissions
+
 class DeviceRepository:
     def __init__(self, bootstrap, input_bootstrap_port, opendht_listen_port):
         dht_node = DhtNode(bootstrap, input_bootstrap_port, opendht_listen_port)
@@ -205,6 +213,10 @@ class DeviceRepository:
             for device in devices:
                 device["info_log"] = log
             result += devices
+        for device in result:
+            c, p = class_repository.get_c_and_p(device["info_log"])
+            device["capabilities"] = c
+            device["permissions"] = p
         return result
 
     def dht_get(self, info_log):
@@ -303,7 +315,7 @@ def main():
             options.host, options.name)
     device_repository = DeviceRepository(options.bootstrap, options.input_bootstrap_port,
             options.opendht_listen_port)
-    app.run(debug=False, use_reloader=False, port=options.registry_listen_port)
+    app.run(host="0.0.0.0", debug=False, use_reloader=False, port=options.registry_listen_port)
     
 if __name__ == '__main__':
     main()

@@ -60,7 +60,7 @@ client_output_log = None
 key = None
 
 #Other constants
-RENEWAL_TIME = 25 # Time to wait before sending renewal messages to discover server
+RENEWAL_TIME = 115 # Time to wait before sending renewal messages to discover server
 
 def conn_msg():
     """
