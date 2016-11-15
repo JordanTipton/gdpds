@@ -131,9 +131,13 @@ class DeviceClassRepository:
             """
             Return set of guids wich have capability c
             """
-            sql = """SELECT c.info_log 
-                     FROM capabilities c
-		             WHERE c.capability = '%s'""" % c
+            if c == "any":
+                sql = """SELECT c.info_log
+                         FROM capabilities c"""
+            else:
+                sql = """SELECT c.info_log 
+                         FROM capabilities c
+		         WHERE c.capability = '%s'""" % c
             cursor = self.db.cursor()
             cursor.execute(sql)
             results = cursor.fetchall()
