@@ -2,28 +2,29 @@
 
 """
 A gdp disocvery server which advertises itself on a local network, receives RPC messages
-from clients, and logs those clients' information in a MySQL database. If the server 
-does not receive a renewal RPC message from a client within TIMEOUT seconds after its 
-last message, the client is removed from the database.
+from clients, caches those clients' information in a local MySQL database, and updates
+a distributed hash table (DHT) with the clients' metadata. If the server does not receive 
+a renewal RPC message from a client within TIMEOUT seconds after its last message, the 
+client is removed from the MySQL database.
 
 Client information is obtained by reading the client's specified info_log. Clients with
 private keys are authenticated and info_logs containing valid certificates are
-verified. Clients are logged in the discovery database even if they are not certified
+verified. Clients are logged in the local database and DHT even if they are not certified
 or authenticated, but the clients table describes whether they are certified and/or
 authenticated.
 
 ### Usage ###
 
 Python API example:
-> discovery.server.run(router_host='129.168.4.2', router_port=8007, user="gdp_discovery",
-                       passwd="gdp_disc438", host="localhost", name="discovery_db",
-                       bootstrap="bootstrap.ring.cx:4222", trusted_certificates=certs)
+> gdpds.local_server.run(router_host='129.168.4.2', router_port=8007, user="gdp_discovery",
+                          passwd="gdp_disc438", host="localhost", name="discovery_db",
+                          bootstrap="bootstrap.ring.cx:4222", trusted_certificates=certs)
 
 Python API example using defaults and no trusted certificates:
-> discovery.server.run()
+> gdpds.local_server.run()
 
 Command line example using defaults and trusted certificates file:
-> discovery/server.py -c 'trusted_certs.txt'
+> gdpds.local_server.py -c 'trusted_certs.txt'
 
 Public interface:
 * Run:
@@ -36,13 +37,23 @@ Public interface:
 
 Internal structure and key properties:
 * Database:
-  The discovery database is designed to be ephemeral in nature. It is maintained in
+  The MySQL database is designed to be a cache. It is maintained in
   real time and previously stored state is discarded upon discovery server startup.
   
-  The discovery service logs client information using 3 tables:
+  The local discovery server stores client information using 3 tables:
   - clients: contains client-specific information such as guid, IP, auth/cert status
   - capabilities: contains guid:capability mappings to be used in queries
   - permissions: contains guid:permission mappings to be used in queries
+
+  The local discovery server runs a python3 dht_service and puts client info into the
+  DHT using the dht_service's restful API. The following data is stored in the DHT
+  for each connected client:
+  - time of last connection / renewal
+  - IP address of this local server
+  - device GUID
+  - info log name describing device
+  - input log corresponding to device (optional)
+  - output log corresponding to device (optional)
 
   Client public keys are not stored in the database as they are too large. Instead,
   a "keys" directory is created which contains the currently logged clients'
@@ -83,7 +94,7 @@ import requests
 import json
 import info_log_reader
 
-DEBUG = True # Prints database tables at TIMEOUT_FREQ if True
+DEBUG = False # Prints database tables at TIMEOUT_FREQ if True
 
 public_ip = urlopen("http://ip.42.pl/raw").read()
 
@@ -356,20 +367,22 @@ class ClientLogger:
             return False
 
     def dht_put(self, device_guid, info_log, input_log, output_log):
-        if DEBUG:
-            print "dht_put: device_guid = %s, info_log = %s, input_log = %s, output_log = %s" % \
-                    (device_guid, info_log, input_log, output_log)
+        """
+        Stores the following data about a connected client in the DHT:
+        - current time
+        - public IP address of this server
+        - client GUID
+        - corresponding info log name
+        - corresponding input log name (optional)
+        - corresponding output log name (optional)
+        """
         time = str(datetime.datetime.now())
-        #time = datetime.datetime.now()
-        #time = str(time.year) + "-" + str(time.month) + "-" + str(time.day) + "T" + \
-        #       str(time.hour) + ":" + str(time.minute) + ":" + str(time.second)
         data = {"guid": device_guid, "datetime": time, "logger_ip": public_ip, \
                 "input_log": input_log, "output_log": output_log}
         r = requests.put("http://localhost:" + str(DHT_PORT) + "/rest/v1/devices/" + info_log, data=data)
-        print "dht_put: completed put to DHT"
         if r.status_code == 200:
             result = [{str(k): str(v) for k, v in json.loads(str(e)).items()} for e in r.json()]
-            print "dht_put: returning " + str(result)
+            print "successfully logged " + device_guid + " in DHT"
             return  result
         else:
             print "failed to log device with DHT"
@@ -378,8 +391,10 @@ class ClientLogger:
     def dht_get(self, info_log):
         r = requests.get("http://localhost:" + str(DHT_PORT) + "/rest/v1/devices/" + info_log)
         if r.status_code == 200:
+            print "successfully got DHT info for info log: " + info_log
             return [{str(k): str(v) for k, v in json.loads(str(e)).items()} for e in r.json()]
         else:
+            print "failed to get DHT info for info log: " + info_log
             return False
 
 class DhtNode(threading.Thread):

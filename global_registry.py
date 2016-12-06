@@ -1,4 +1,47 @@
 #!/usr/bin/env python
+
+"""
+A HTTP server which handles get requests for devices using the GDP and handles put requests
+for registering device classes (all devices described by a particular info log) with this
+global registry service.
+
+
+### Public restful interface ###
+
+GET /rest/v1/devices:
+    GET requests must specify capability, permission, and active_since query parameters.
+    All devices which have been logged in the DHT since active_since, which have all of the queried
+    capabilities and which have at least one of the queried permissions will be returned. If the query
+    parameter 'capability' is set to 'any' devices with any capability will be returned.
+
+    Example GETrequest: 
+    http://gdp.cs.berkeley.edu:11780/rest/v1/devices?capability=any&permission=p1234&permission=public&active_since=2016-12-3 22:08:24.130922
+
+PUT /rest/v1/deviceclasses:
+    PUT requests must specify an unregistered info log in the form data. The specified info log
+    will be read and stored in the global registry's database.
+
+    Example HTTP PUT request:
+    http://gdp.cs.berkeley.edu:11780/rest/v1/deviceclasses
+    form data:
+    info_log: edu.berkeley.eecs.jordan.nov14.pwrbld_il1
+
+### Internal structure and key properties ###
+
+The global registry uses a two-step filtering process to respond to GET requests:
+1. The registry's MySQL database is searched for all info logs which meet the criteria
+   specified in the GET request
+2. The registry gets all of the devices logged in the discovery DHT for each info log
+   found in (1). Of the devices found in the DHT, only those which have datetimes
+   after the 'active_since' query parameter are returned
+
+A MySQL database is used to store information about registered device classes (info logs):
+- a 'capabilities' table stores (info log name, capability string) pairs
+- a 'permissions' table stores (info log name, permission string) pairs
+
+The global registry runs a python3 dht_service to access the discovery DHT
+"""
+
 import sys
 # append parent directories to path so can import gdp from gdpds or its parent
 sys.path.append("../")
@@ -28,24 +71,31 @@ class Device(Resource):
         capabilities = request.args.getlist("capability")
         permissions = request.args.getlist("permission")
         active_since = request.args.get("active_since")
-        print "Device -get: capabilities = %s, permissions = %s, active_since = %s" % \
+        print "Device - get: capabilities = %s, permissions = %s, active_since = %s" % \
                 (str(capabilities), str(permissions), str(active_since))
-        return device_repository.get_devices(capabilities, permissions, active_since)
+        result = device_repository.get_devices(capabilities, permissions, active_since)
+        print "returning result: " + str(result)
+        return result
 
 class DeviceClass(Resource):
     def put(self):
         form_data = json.loads(json.dumps(request.form))
         info_log = form_data["info_log"]
+        print "DeviceClass - put: info_log = " + info_log
         capabilities, permissions = log_reader.read(info_log)[:2]
         class_repository.store_new(info_log, capabilities, permissions)
         result = class_repository.get(capabilities, permissions)
-        print "result = " + str(result)
+        print "returning result: " + str(result)
         return result
 
 api.add_resource(Device, "/rest/v1/devices")
 api.add_resource(DeviceClass, "/rest/v1/deviceclasses")
 
 class DeviceClassRepository:
+    """
+    Class providing access to information about device classes.
+    A device class is all of the devices which are described by a specific info log
+    """
     def __init__(self, db_user, db_passwd, db_host, db_name):
         """
         Logs into a MySQL using the specified login information and creates a database
@@ -178,8 +228,6 @@ class DeviceClassRepository:
         if have_capabilities:
             for p in permissions:
                 result |= (have_capabilities & with_permission(p))
-        #db.close()
-        print "DeviceClassRepository get: result = " + str(list(result))
         return list(result)
 
     def get_c_and_p(self, info_log):
@@ -198,15 +246,15 @@ class DeviceClassRepository:
         return capabilities, permissions
 
 class DeviceRepository:
+    """
+    Class which provides access to information about devices
+    """
     def __init__(self, bootstrap, input_bootstrap_port, opendht_listen_port):
         dht_node = DhtNode(bootstrap, input_bootstrap_port, opendht_listen_port)
         dht_node.start()
 
     def get_devices(self, capabilities, permissions, active_since):
-        print "get_devices: capabilities = " + str(capabilities) + ", permissions = " + \
-                str(permissions) + ", active_since = " + str(active_since)
         info_logs = class_repository.get(capabilities, permissions)
-        print "get_devices: info_logs = " + str(info_logs)
         result = []
         for log in info_logs:
             print "calling dht_get(" + log + ")"
@@ -224,11 +272,9 @@ class DeviceRepository:
         return result
 
     def dht_get(self, info_log):
-        print "dht_get: info_log = " + info_log
         r = requests.get("http://localhost:" + str(DHT_PORT) + "/rest/v1/devices/" + info_log)
         if r.status_code == 200:
             result = [{str(k): str(v) for k, v in json.loads(str(e)).items()} for e in r.json()]
-            print "result = " + str(result)
             return result
         else:
             return False

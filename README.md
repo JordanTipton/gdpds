@@ -10,7 +10,7 @@ Please see "gdpds_overview.pdf" for a more detailed description of GDPDS.
 
 ```
 cd gdp/lang/python/apps
-mkdir git clone https://github.com/jordantipton/gdpds.git
+git clone https://github.com/jordantipton/gdpds.git
 cd gdpds
 mkdir lib
 cd lib
@@ -37,6 +37,7 @@ make -j
 sudo make install
 
 # clone the repo
+cd ../..
 git clone https://github.com/savoirfairelinux/opendht.git
 
 # build and install
@@ -50,6 +51,7 @@ sudo make install
 ### Install python dependencies
 
 ```
+sudo apt-get install mysql-server
 sudo apt-get install python-dbus
 sudo apt-get install python-gobject-2-dev
 sudo apt-get install python-avahi
@@ -62,6 +64,15 @@ sudo pip install flask_restful
 sudo python3 -m pip install flask
 sudo python3 -m pip install flask_restful
 ```
+
+### Create MySQL user for the local_server and/or global_registry and grant permissions
+Note: the password below is used as an example and should be changed
+''' 
+mysql -u root -p
+CREATE USER 'gdp_discovery'@'localhost' IDENTIFIED BY 'gdp_disc438';
+GRANT ALL PRIVILEGES ON * . * TO 'gdp_discovery'@'localhost';
+'''
+
 
 # API Overview
 
@@ -82,6 +93,8 @@ PERMISSIONS:
 <permission n>
 ```
 
+Create a new info log and then run client_setup to write the configuration file 
+to the info log
 ```
-python gdpds/client_setup.py
+python gdpds/client_setup.py <info_log> <info_log signing-key-file> <registration_config-file>
 ```

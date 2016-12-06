@@ -20,12 +20,7 @@ Public interface:
   the local network.
 """
 
-#TODO remove commented below
 import sys
-## append parent directories to path so can import gdp from gdpds or its parent
-#sys.path.append("../")
-#sys.path.append("../../")
-#import gdp
 import time
 import argparse
 import dbus
@@ -45,7 +40,7 @@ loop = DBusGMainLoop()
 bus = dbus.SystemBus(mainloop=loop)
 
 server = dbus.Interface( bus.get_object(avahi.DBUS_NAME, '/'),
-    'org.freedesktop.Avahi.Server') #TODO: change this
+    'org.freedesktop.Avahi.Server')
 
 sbrowser = dbus.Interface(bus.get_object(avahi.DBUS_NAME,
     server.ServiceBrowserNew(avahi.IF_UNSPEC,
@@ -285,10 +280,5 @@ def advertise(guid, info_log, output_log=None, input_log=None, gdp_router=None, 
     if key_file:
         print "key_file = " + key_file
         key = RSA.importKey(open(key_file).read())
-    #TODO remove gdp_router argument and commented below
-    # if gdp_router:
-    #     gdp.gdp_init(gdp_router)
-    # else:
-    #     gdp.gdp_init()
     sbrowser.connect_to_signal("ItemNew", myhandler)
     gobject.MainLoop().run()

@@ -1,5 +1,11 @@
 #!/usr/bin/env python
 
+"""
+An HTTP server for sending get and put requests to an OpenDHT DHT. Since the OpenDHT API
+uses python3, this server is used by python2 programs as a middleman to communicate with
+an OpenDHT DHT. 
+"""
+
 import opendht as dht
 import argparse
 import json
@@ -16,6 +22,7 @@ class Device(Resource):
         return [v.data.decode("utf-8") for v in node.get(dht.InfoHash.get(log_name))]
 
     def put(self, log_name):
+        """Receives put requests with utf-8 encoded 'guid' form data"""
         log_name = log_name.replace("\x00", "").replace("\\u0000", "")
         print("dht_service - put: log_name = " + log_name)
         guid = request.form["guid"]
