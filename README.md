@@ -2,7 +2,7 @@
 
 The GDP Discovery Service (GDPDS) provides secure discovery and advertisement to clients using the Global Data Plane (GDP). GDPS servers advertise themselves on local networks, allowing clients to connect to them and advertise their capabilities to other clients connected to the GDP. This allows querying clients to identify clients which they have permission to interact with and which possess specific capabilities. GDPDS is designed to be used by lightweight and mobile clients while still providing the option of client authentication.
 
-Please see "gdpds_overview.pdf" for a more detailed description of GDPDS.
+Please see the GDPDS Overview pdf for a more detailed description of GDPDS.
 
 # GDPDS Installation Instructions
 
@@ -76,8 +76,8 @@ GRANT ALL PRIVILEGES ON * . * TO 'gdp_discovery'@'localhost';
 
 # API Overview
 
-### Setup a client's logs
-#### This step is done once to register a client with GDPDS's global registry
+### Setup the info log for a client class and register it
+#### This step is done once to register a type of client with GDPDS's global registry
 
 Create a registry configuration file of the following form:
 ```
