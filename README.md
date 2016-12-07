@@ -76,6 +76,24 @@ GRANT ALL PRIVILEGES ON * . * TO 'gdp_discovery'@'localhost';
 
 # API Overview
 
+### Run Global Registry
+#### This is only necessary if there is no other global registry to bootstrap a local server to
+
+Ensure that port 80 (for HTTP requests) and port 4222 (input bootstrap port) are open.
+These ports can optionally be changed to a different port using command line options.
+
+Run the global registry server
+```
+sudo python gdpds/global_registry.py -u <registry MySQL user> -p <registry MySQL pw> 
+```
+
+### Run Local Discovery Server
+#### One of these should be run on each local subnet through which devices will connect
+Run local server, specifying the global registry (or other local server) as a bootstrap node
+```
+python gdpds/local_server.py -u <local MySQL user> -p <local MySQL pw> -b <global bootstrap ip>:<port>
+```
+
 ### Setup the info log for a client class and register it
 #### This step is done once to register a type of client with GDPDS's global registry
 
@@ -97,4 +115,18 @@ Create a new info log and then run client_setup to write the configuration file
 to the info log
 ```
 python gdpds/client_setup.py <info_log> <info_log signing-key-file> <registration_config-file>
+```
+Register the newly created info log with the global discovery server (using Postman, for example)
+```
+PUT http://<global registry address>:<global registry port>/rest/v1/deviceclasses
+form data:
+info_log: <info log>
+```
+
+### Run client module
+#### A python thread should call client.advertise in a client or gateway (on the client's behalf)
+```
+import gdpds
+
+gdpds.client.advertise(guid=<guid>, info_log=<info_log>, output_log=<output_log>, input_log=<input_log>)
 ```
