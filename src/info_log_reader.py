@@ -1,7 +1,8 @@
 import sys
-# append parent directories to path so can import gdp from gdpds or its parent
+# append parent directories to path so can import gdp depending on where it is called from
 sys.path.append("../")
 sys.path.append("../../")
+sys.path.append("../../../")
 import gdp
 
 class InfoLogReader:
@@ -56,9 +57,3 @@ class InfoLogReader:
             pass # Error could be because there is no certificate
 
         return capabilities, permissions, pkeys, certificate
-
-        # capabilities = ["capability1", "capability2", "capability3"]
-        # permissions = ["permission1", "permission2", "permission3"]
-        # pkeys = ["pkey1", "pkey2", "pkey3", "pkey4"]
-        # certificate = "test_certificate"
-        # return capabilities, permissions, pkeys, certificate

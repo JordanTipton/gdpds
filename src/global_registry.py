@@ -43,9 +43,10 @@ The global registry runs a python3 dht_service to access the discovery DHT
 """
 
 import sys
-# append parent directories to path so can import gdp from gdpds or its parent
+# append parent directories to path so can import gdp depending on where it is called from
 sys.path.append("../")
 sys.path.append("../../")
+sys.path.append("../../../")
 import gdp
 import argparse
 import json

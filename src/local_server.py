@@ -65,9 +65,10 @@ Internal structure and key properties:
 """
 
 import sys
-# append parent directories to path so can import gdp from gdpds or its parent
+# append parent directories to path so can import gdp depending on where it is called from
 sys.path.append("../")
 sys.path.append("../../")
+sys.path.append("../../../")
 import gdp
 import os
 import argparse
