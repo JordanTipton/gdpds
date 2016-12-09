@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 import sys
+sys.path.append("../") # to import gdpds
 import os
-os.path.append("../") # to import gdpds in parent directory
 import gdpds
 import multiprocessing
 import paho.mqtt.client as mqtt
